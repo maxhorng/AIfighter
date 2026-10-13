@@ -6,6 +6,7 @@ const FLOOR = 568;
 const LEFT_EDGE = 115;
 const RIGHT_EDGE = WIDTH - 115;
 const FRAME_MS = 1000 / 60;
+const DASH = { cost: 15, duration: 10 * FRAME_MS, cooldown: 18 * FRAME_MS, speed: 660 };
 let soundEnabled = true;
 
 const PALETTES = {
@@ -78,7 +79,10 @@ class Fighter {
     this.launched = false;
     this.launchVelocityX = 0;
     this.invulnerableUntil = 0;
-    this.guardHeld = false;
+    this.dashUntil = 0;
+    this.dashCooldownUntil = 0;
+    this.dashDirection = 0;
+    this.dashChordHeld = false;
     this.isGuarding = false;
     this.isCrouching = false;
     this.isWalking = false;
@@ -237,6 +241,14 @@ class Fighter {
         parts.torso.setAngle(-this.facing * reachPose * 4);
         this.displayState = a.label;
       }
+    } else if (!isHit && now < this.dashUntil) {
+      this.displayState = 'DASH';
+      this.root.setAngle(this.dashDirection * 10);
+      const stride = Math.sin(now / 35) * 15;
+      parts.frontLeg.setAngle(stride);
+      parts.backLeg.setAngle(-stride);
+      parts.frontArm.setAngle(28);
+      parts.backArm.setAngle(28);
     } else if (!isHit && this.isGuarding && this.isWalking) {
       this.displayState = 'BACK GUARD';
       const step = Math.sin(now / 72) * 5;
@@ -384,7 +396,7 @@ class NeonClash extends Phaser.Scene {
   createInput() {
     const input = this.input.keyboard;
     this.keys = input.addKeys({
-      left: 'A', right: 'D', up: 'W', down: 'S', guard: 'SHIFT',
+      left: 'A', right: 'D', up: 'W', down: 'S', dash: 'SHIFT',
       light: 'J', medium: 'K', heavy: 'L', projectile: 'U', rising: 'I',
       arrowLeft: 'LEFT', arrowRight: 'RIGHT', arrowUp: 'UP', arrowDown: 'DOWN'
     });
@@ -490,7 +502,7 @@ class NeonClash extends Phaser.Scene {
 
   startMelee(attacker, kind, stance = 'standing') {
     const now = this.time.now;
-    if (now < attacker.stunUntil || attacker.launched || attacker.health <= 0) return false;
+    if (now < attacker.stunUntil || now < attacker.dashUntil || attacker.launched || attacker.health <= 0) return false;
     if (attacker.attack && now >= attacker.attackCooldown) attacker.attack = null;
     if (attacker.attack) {
       const nextRank = { light: 1, medium: 2, heavy: 3 }[kind] || 4;
@@ -513,7 +525,7 @@ class NeonClash extends Phaser.Scene {
   launchFireball(kind, fromMotion) {
     const now = this.time.now;
     const cost = kind === 'heavy' ? 35 : kind === 'medium' ? 27 : 20;
-    if (this.roundOver || this.player.launched || this.player.meter < cost || now < this.player.stunUntil || now < this.player.attackCooldown) {
+    if (this.roundOver || this.player.launched || now < this.player.dashUntil || this.player.meter < cost || now < this.player.stunUntil || now < this.player.attackCooldown) {
       this.showMessage('氣量不足', 700, '#ff8ba8');
       return false;
     }
@@ -536,7 +548,7 @@ class NeonClash extends Phaser.Scene {
   startMotionAttack(motion, strength = 'medium', cost = 0) {
     const now = this.time.now;
     const fighter = this.player;
-    if (this.roundOver || fighter.health <= 0 || fighter.launched || now < fighter.stunUntil || fighter.jumpHeight > 0) return false;
+    if (this.roundOver || fighter.health <= 0 || fighter.launched || now < fighter.stunUntil || now < fighter.dashUntil || fighter.jumpHeight > 0) return false;
     if (fighter.meter < cost) {
       this.showMessage('氣量不足', 700, '#ff8ba8');
       return false;
@@ -563,6 +575,28 @@ class NeonClash extends Phaser.Scene {
 
   risingStrike() {
     return this.startMotionAttack('623', 'medium', 35);
+  }
+
+  tryDash(direction, now = this.time.now) {
+    const fighter = this.player;
+    if (!direction || this.roundOver || fighter.health <= 0 || fighter.launched ||
+        now < fighter.stunUntil || fighter.jumpHeight > 0 || fighter.velocityY > 0 ||
+        now < fighter.dashUntil || now < fighter.dashCooldownUntil || now < fighter.attackCooldown) return false;
+    if (fighter.attack && now >= fighter.attackCooldown) fighter.attack = null;
+    if (fighter.attack) return false;
+    if (fighter.meter < DASH.cost) {
+      this.showMessage('衝刺需要 15 氣量', 650, '#ff8ba8');
+      return false;
+    }
+    fighter.meter -= DASH.cost;
+    fighter.dashDirection = Math.sign(direction);
+    fighter.dashUntil = now + DASH.duration;
+    fighter.dashCooldownUntil = now + DASH.cooldown;
+    fighter.isGuarding = false;
+    fighter.guardLow = false;
+    this.playTone(210, 0.07, 'triangle');
+    this.showMessage(`${direction * fighter.facing > 0 ? 'FORWARD' : 'BACK'} DASH −15`, 450, '#80fff3');
+    return true;
   }
 
   update(time, delta) {
@@ -602,17 +636,27 @@ class NeonClash extends Phaser.Scene {
     fighter.isCrouching = false;
     fighter.isGuarding = false;
     fighter.isWalking = false;
+    if (isPlayer) {
+      const axes = this.getMoveAxes();
+      const dashChord = this.keys.dash.isDown && axes.horizontal !== 0 && !axes.down && !axes.up;
+      const dashPressed = dashChord && !fighter.dashChordHeld;
+      fighter.dashChordHeld = dashChord;
+      if (dashPressed) this.tryDash(axes.horizontal, now);
+    }
     const canAct = now >= fighter.stunUntil && !fighter.launched && fighter.health > 0;
 
     if (!canAct) {
+      fighter.dashUntil = 0;
       fighter.isGuarding = fighter.stunType === 'block' && !fighter.launched;
       fighter.isCrouching = fighter.isGuarding && fighter.guardLow;
       fighter.velocityX = fighter.launched ? fighter.launchVelocityX : fighter.velocityX * 0.75;
     } else if (isPlayer) {
       const axes = this.getMoveAxes();
-      fighter.guardHeld = this.keys.guard.isDown;
       const airborne = fighter.jumpHeight > 0 || fighter.velocityY > 0;
-      if (airborne) {
+      if (now < fighter.dashUntil) {
+        fighter.velocityX = fighter.dashDirection * DASH.speed;
+        fighter.isWalking = true;
+      } else if (airborne) {
         fighter.isWalking = Boolean(fighter.jumpDirection);
         if (canAct && (!fighter.attack || fighter.attack.stance === 'air')) {
           fighter.velocityX = fighter.jumpDirection * 215;
@@ -623,10 +667,9 @@ class NeonClash extends Phaser.Scene {
         fighter.isCrouching = axes.down;
         const backingAway = axes.horizontal !== 0 && axes.horizontal * fighter.facing < 0;
         const autoBackGuard = backingAway && fighter.jumpHeight === 0;
-        const stationaryGuard = fighter.guardHeld && fighter.jumpHeight === 0;
-        fighter.isGuarding = autoBackGuard || stationaryGuard;
+        fighter.isGuarding = autoBackGuard || fighter.isCrouching;
         fighter.guardLow = fighter.isGuarding && fighter.isCrouching;
-        const horizontal = stationaryGuard || axes.down ? 0 : axes.horizontal;
+        const horizontal = axes.down ? 0 : axes.horizontal;
         fighter.isWalking = Boolean(horizontal);
         const moveSpeed = fighter.isCrouching ? 100 : (autoBackGuard ? 165 : 260);
         fighter.velocityX = horizontal * moveSpeed;
@@ -743,6 +786,7 @@ class NeonClash extends Phaser.Scene {
       : attacker.attackCooldown + advantage * FRAME_MS;
     defender.stunType = blocked ? 'block' : 'hit';
     defender.attackCooldown = now;
+    defender.dashUntil = 0;
     defender.jumpOnAttack = false;
     defender.velocityX = impactDirection * (blocked ? data.knockback * 0.18 : data.knockback);
     if (!blocked && data.pushDistance) {
@@ -812,6 +856,7 @@ class NeonClash extends Phaser.Scene {
         target.stunUntil = now + (blocked ? 100 : 320);
         target.stunType = blocked ? 'block' : 'hit';
         target.attackCooldown = now;
+        target.dashUntil = 0;
         target.jumpOnAttack = false;
         target.invulnerableUntil = now + 2 * FRAME_MS;
         target.velocityX = projectile.direction * (blocked ? 10 : 55);

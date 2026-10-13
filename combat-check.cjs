@@ -7,8 +7,8 @@ const context = {
   Phaser: { Scene: class {}, Game: class {}, Math: { Clamp: (v, min, max) => Math.min(max, Math.max(min, v)) }, Scale: {} },
   document: { querySelector: () => null }
 };
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8') + '\nglobalThis.combat = { NeonClash, FRAME_MS };', context);
-const { NeonClash, FRAME_MS: F } = context.combat;
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8') + '\nglobalThis.combat = { NeonClash, FRAME_MS, DASH };', context);
+const { NeonClash, FRAME_MS: F, DASH } = context.combat;
 let checks = 0;
 const check = (value, message) => { assert.ok(value, message); checks++; };
 const close = (actual, expected, message) => check(Math.abs(actual - expected) < 1e-7, message);
@@ -19,6 +19,7 @@ function fighter(x, facing, isPlayer) {
     jumpHeight: 0, jumpDirection: 0, attack: null, attackCooldown: 0,
     stunUntil: 0, stunType: '', invulnerableUntil: 0, isGuarding: false,
     guardLow: false, launched: false, launchVelocityX: 0, comboCount: 0,
+    dashUntil: 0, dashCooldownUntil: 0, dashDirection: 0, dashChordHeld: false,
     setFacing(direction) { this.facing = direction; }, setPose() {}
   };
 }
@@ -28,7 +29,7 @@ function setup() {
   scene.time = { now: 1000 };
   scene.player = fighter(420, 1, true);
   scene.rival = fighter(480, -1, false);
-  scene.keys = { guard: { isDown: false }, up: { isDown: false }, down: { isDown: false }, arrowDown: { isDown: false } };
+  scene.keys = { dash: { isDown: false }, up: { isDown: false }, down: { isDown: false }, arrowDown: { isDown: false } };
   scene.getMoveAxes = () => ({ horizontal: 0, up: false, down: false });
   scene.cameras = { main: { shake() {} } };
   scene.tweens = { add() {} };
@@ -205,6 +206,76 @@ for (const facing of [1, -1]) {
   check(!s.roundOver && s.roundTimer === 60 && s.elapsed === 0, 'restarting an ended Scene restores a full playable round');
   check(s.inputTrail.length === 0, 'restart clears old motion inputs');
   check(s.startMelee(s.player, 'light'), 'a new round accepts attacks after a prior knockout');
+}
+
+for (const facing of [1, -1]) {
+  for (const direction of [1, -1]) {
+    const s = setup();
+    s.rival.x = s.player.x + facing * 250;
+    s.keys.dash.isDown = true;
+    s.getMoveAxes = () => ({ horizontal: direction, down: false, up: false });
+    const originalX = s.player.x;
+    s.updateFighter(s.player, s.rival, F, s.time.now, true);
+    close(s.player.meter, 45 - DASH.cost, 'dash consumes meter once');
+    check((s.player.x - originalX) * direction > 0, 'dash moves in the selected world direction on either side');
+    check(!s.player.isGuarding, 'even a backward dash does not grant guard');
+    check(!s.startMelee(s.player, 'light'), 'normal cannot interrupt an active dash');
+    s.getMoveAxes = () => ({ horizontal: -direction, down: false, up: false });
+    s.time.now += F;
+    s.updateFighter(s.player, s.rival, F, s.time.now, true);
+    check(Math.sign(s.player.velocityX) === direction, 'dash direction stays locked until it ends');
+    s.time.now += DASH.cooldown;
+    s.updateFighter(s.player, s.rival, F, s.time.now, true);
+    close(s.player.meter, 45 - DASH.cost, 'holding the chord does not repeatedly spend energy');
+    s.keys.dash.isDown = false;
+    s.updateFighter(s.player, s.rival, F, s.time.now, true);
+    s.keys.dash.isDown = true;
+    s.time.now += F;
+    s.updateFighter(s.player, s.rival, F, s.time.now, true);
+    close(s.player.meter, 45 - 2 * DASH.cost, 'a new Shift press starts another dash');
+  }
+}
+
+{
+  const s = setup();
+  s.keys.dash.isDown = true;
+  s.updateFighter(s.player, s.rival, F, s.time.now, true);
+  check(!s.player.isGuarding && s.player.meter === 45, 'Shift alone neither guards nor spends energy');
+  s.getMoveAxes = () => ({ horizontal: 0, down: true, up: false });
+  s.updateFighter(s.player, s.rival, F, s.time.now, true);
+  check(s.player.isGuarding && s.player.guardLow, 'S alone enables crouching guard');
+  s.getMoveAxes = () => ({ horizontal: -1, down: false, up: false });
+  s.keys.dash.isDown = false;
+  s.updateFighter(s.player, s.rival, F, s.time.now, true);
+  check(s.player.isGuarding && !s.player.guardLow && s.player.velocityX < 0, 'walking backward still enables standing guard');
+}
+
+{
+  const s = setup();
+  s.player.meter = DASH.cost - 1;
+  check(!s.tryDash(1) && s.player.meter === DASH.cost - 1, 'insufficient energy prevents dash without charging');
+  s.player.meter = DASH.cost;
+  s.player.jumpHeight = 40;
+  check(!s.tryDash(1) && s.player.meter === DASH.cost, 'airborne dash is rejected without charging');
+  s.player.jumpHeight = 0;
+  s.player.stunUntil = s.time.now + F;
+  check(!s.tryDash(1), 'dash cannot cancel hit or block stun');
+  s.player.stunUntil = 0;
+  check(s.tryDash(1) && s.player.meter === 0, 'exactly enough energy allows one dash');
+  s.time.now += DASH.duration + F;
+  s.player.meter = 45;
+  check(!s.tryDash(-1), 'dash cooldown prevents immediate repeated dashes');
+}
+
+{
+  const s = setup();
+  s.tryDash(-1);
+  s.updateFighter(s.player, s.rival, F, s.time.now, true);
+  s.startMelee(s.rival, 'light');
+  s.time.now += s.rival.attack.data.startup;
+  s.updateAttack(s.rival, s.player, F, s.time.now);
+  check(s.player.health === 94 && s.player.stunType === 'hit', 'backward dash takes full damage, not chip');
+  check(s.player.dashUntil === 0, 'being hit immediately interrupts the dash');
 }
 
 console.log(`Passed ${checks} combat checks.`);
