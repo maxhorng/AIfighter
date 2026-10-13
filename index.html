@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#080c18">
+  <title>NEON CLASH — Phaser 4 格鬥原型</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="cabinet">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">N</span><span>NEON <b>CLASH</b></span></div>
+      <div class="edition">PHASER 4 · 2D FIGHTER PROTOTYPE</div>
+      <button id="sound-toggle" class="sound-toggle" type="button" aria-label="切換音效">音效 <b>開</b></button>
+    </header>
+
+    <section class="game-shell" aria-label="NEON CLASH 格鬥遊戲">
+      <div id="game"></div>
+      <div class="scanlines" aria-hidden="true"></div>
+    </section>
+
+    <footer class="controls">
+      <div class="control-group"><span class="control-label">移動</span><kbd>A</kbd><kbd>D</kbd><span>／</span><kbd>←</kbd><kbd>→</kbd><span>W 跳・W+A 後跳・W+D 前跳；空中鎖定方向</span></div>
+      <div class="control-group"><span class="control-label">攻擊</span><kbd>J/K/L</kbd><span>站攻・跳攻</span><kbd>S+J/K/L</kbd><span>下段破站防・跳 K 打背</span></div>
+      <div class="control-group skills"><span class="control-label">搓招 + J/K/L</span><span>236 下前／214 下後：擊飛追擊・623：對空昇龍</span><kbd>U</kbd><small>氣功</small><kbd>I</kbd><small>升龍</small></div>
+      <div class="control-hint">防禦：後退或 Shift；蹲防：S+後退或 S+Shift　·　格擋幀差 <b>J +3・K -8・L -12</b>　·　<b>R</b> 重來</div>
+    </footer>
+  </main>
+  <script src="vendor/phaser-4.0.0.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
