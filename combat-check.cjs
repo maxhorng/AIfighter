@@ -187,4 +187,24 @@ for (const facing of [1, -1]) {
   check(s.player.velocityX < 0, 'air movement stays locked despite opposite input');
 }
 
+{
+  const s = setup();
+  s.roundOver = true;
+  s.elapsed = 60000;
+  s.roundTimer = 0;
+  s.inputTrail = [{ direction: 'f', horizontal: 1, time: 1000 }];
+  const shape = () => ({
+    setDepth() { return this; }, setScale() { return this; },
+    setStrokeStyle() { return this; }, add() { return this; }
+  });
+  s.add = { ellipse: shape, container: shape, rectangle: shape, circle: shape };
+  s.drawArena = s.createHud = s.createInput = s.createTouchControls = s.updateHud = () => {};
+  s.cameras.main.setBackgroundColor = s.cameras.main.setBounds = s.cameras.main.fadeIn = () => {};
+  s.events = { on() {} };
+  s.create();
+  check(!s.roundOver && s.roundTimer === 60 && s.elapsed === 0, 'restarting an ended Scene restores a full playable round');
+  check(s.inputTrail.length === 0, 'restart clears old motion inputs');
+  check(s.startMelee(s.player, 'light'), 'a new round accepts attacks after a prior knockout');
+}
+
 console.log(`Passed ${checks} combat checks.`);

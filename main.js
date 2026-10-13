@@ -283,6 +283,20 @@ class NeonClash extends Phaser.Scene {
   }
 
   create() {
+    // Phaser reuses the Scene instance on restart; reset each round's state here.
+    this.roundOver = false;
+    this.roundTimer = 60;
+    this.elapsed = 0;
+    this.projectiles = [];
+    this.effects = [];
+    this.inputTrail = [];
+    this.attackTrail = [];
+    this.lastDirection = '';
+    this.comboMessageUntil = 0;
+    this.cpuAttackAt = 0;
+    this.cpuGuardUntil = 0;
+    this.cpuGuardLow = false;
+    this.cpuNextDecision = 0;
     this.soundEnabled = soundEnabled;
     this.drawArena();
     this.player = new Fighter(this, 420, PALETTES.player, true, 'CYAN STRIKER');
