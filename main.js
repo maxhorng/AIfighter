@@ -404,9 +404,21 @@ class NeonClash extends Phaser.Scene {
       this.resumeAudio();
       if (event.code === 'KeyR') {
         this.scene.restart();
+      } else if (!event.repeat && ['ShiftLeft', 'ShiftRight', 'KeyA', 'KeyD', 'ArrowLeft', 'ArrowRight'].includes(event.code)) {
+        const axes = this.getMoveAxes();
+        if (this.keys.dash.isDown && axes.horizontal && !axes.down && !axes.up && !this.player.dashChordHeld) {
+          this.player.dashChordHeld = true;
+          this.tryDash(axes.horizontal);
+        }
       }
     };
+    // Capture taps between render frames and re-arm only when the chord is released.
+    this.keyUpHandler = () => {
+      const axes = this.getMoveAxes();
+      if (!this.keys.dash.isDown || !axes.horizontal || axes.down || axes.up) this.player.dashChordHeld = false;
+    };
     input.on('keydown', this.keyDownHandler);
+    input.on('keyup', this.keyUpHandler);
     this.input.keyboard.addCapture(['SPACE', 'UP', 'DOWN', 'LEFT', 'RIGHT']);
     this.input.keyboard.on('keydown-SPACE', (event) => event.preventDefault());
   }
@@ -983,6 +995,7 @@ class NeonClash extends Phaser.Scene {
 
   shutdown() {
     this.input.keyboard?.off('keydown', this.keyDownHandler);
+    this.input.keyboard?.off('keyup', this.keyUpHandler);
     this.audioContext?.close();
     this.audioContext = null;
     this.projectiles.forEach((item) => item.graphic.destroy(true));

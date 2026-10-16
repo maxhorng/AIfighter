@@ -278,4 +278,26 @@ for (const facing of [1, -1]) {
   check(s.player.dashUntil === 0, 'being hit immediately interrupts the dash');
 }
 
+{
+  const s = setup();
+  const buttons = {};
+  for (const name of ['left', 'right', 'up', 'down', 'dash', 'arrowLeft', 'arrowRight', 'arrowUp', 'arrowDown']) buttons[name] = { isDown: false };
+  s.input = { keyboard: { addKeys: () => buttons, on() {}, addCapture() {} } };
+  s.resumeAudio = () => {};
+  s.createInput();
+  s.getMoveAxes = NeonClash.prototype.getMoveAxes.bind(s);
+  buttons.dash.isDown = buttons.right.isDown = true;
+  s.keyDownHandler({ code: 'KeyD', repeat: false });
+  close(s.player.meter, 30, 'a quick chord triggers without waiting for a render frame');
+  s.keyDownHandler({ code: 'KeyD', repeat: true });
+  close(s.player.meter, 30, 'keyboard auto-repeat cannot spend extra meter');
+  buttons.dash.isDown = buttons.right.isDown = false;
+  s.keyUpHandler();
+  check(!s.player.dashChordHeld, 'quick key release re-arms the chord');
+  s.time.now += DASH.cooldown;
+  buttons.dash.isDown = buttons.left.isDown = true;
+  s.keyDownHandler({ code: 'ShiftLeft', repeat: false });
+  close(s.player.meter, 15, 'pressing Shift after direction also starts a new dash');
+}
+
 console.log(`Passed ${checks} combat checks.`);
