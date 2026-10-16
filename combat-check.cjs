@@ -7,8 +7,8 @@ const context = {
   Phaser: { Scene: class {}, Game: class {}, Math: { Clamp: (v, min, max) => Math.min(max, Math.max(min, v)) }, Scale: {} },
   document: { querySelector: () => null }
 };
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8') + '\nglobalThis.combat = { NeonClash, FRAME_MS, DASH };', context);
-const { NeonClash, FRAME_MS: F, DASH } = context.combat;
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'stickman.js'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8') + '\nglobalThis.combat = { NeonClash, FRAME_MS, DASH, computeStickPose };', context);
+const { NeonClash, FRAME_MS: F, DASH, computeStickPose } = context.combat;
 let checks = 0;
 const check = (value, message) => { assert.ok(value, message); checks++; };
 const close = (actual, expected, message) => check(Math.abs(actual - expected) < 1e-7, message);
@@ -198,7 +198,7 @@ for (const facing of [1, -1]) {
     setDepth() { return this; }, setScale() { return this; },
     setStrokeStyle() { return this; }, add() { return this; }
   });
-  s.add = { ellipse: shape, container: shape, rectangle: shape, circle: shape };
+  s.add = { ellipse: shape, container: shape, rectangle: shape, circle: shape, graphics: shape };
   s.drawArena = s.createHud = s.createInput = s.createTouchControls = s.updateHud = () => {};
   s.cameras.main.setBackgroundColor = s.cameras.main.setBounds = s.cameras.main.fadeIn = () => {};
   s.events = { on() {} };
@@ -300,4 +300,40 @@ for (const facing of [1, -1]) {
   close(s.player.meter, 15, 'pressing Shift after direction also starts a new dash');
 }
 
-console.log(`Passed ${checks} combat checks.`);
+// Connected joint regression: every crouching pose keeps head/neck/torso and limbs attached.
+for (const facing of [1, -1]) {
+  const s = setup();
+  const f = s.player;
+  f.facing = facing;
+  const standing = computeStickPose(f, 1000);
+  for (const kind of [null, 'light', 'medium', 'heavy']) {
+    f.isCrouching = true;
+    f.isGuarding = !kind;
+    f.attack = null;
+    if (kind) s.startMelee(f, kind, 'crouch');
+    for (const frame of [0, 4, 8, 14, 22]) {
+      if (f.attack) f.attack.frame = frame;
+      const pose = computeStickPose(f, 1000 + frame * F);
+      check(pose.head.y > standing.head.y, 'crouching lowers the entire upper body');
+      close(pose.head.y - pose.shoulder.y, -31, 'head remains fixed relative to shoulder');
+      close(pose.neck.y - pose.shoulder.y, -9, 'neck remains connected to torso');
+      close(pose.frontArm.start.x, pose.frontShoulder.x, 'front arm starts at shoulder');
+      close(pose.backArm.start.y, pose.backShoulder.y, 'back arm starts at shoulder');
+      close(pose.frontLeg.start.y, pose.pelvis.y, 'front leg starts at pelvis');
+      close(pose.frontLeg.end.y, -5, 'front foot stays on floor while crouching or attacking low');
+      close(pose.backLeg.end.y, -5, 'back foot stays on floor while crouching or attacking low');
+      for (const [name, upper, lower] of [['frontArm', 40, 43], ['backArm', 37, 40], ['frontLeg', 39, 40], ['backLeg', 39, 40]]) {
+        const limb = pose[name];
+        close(Math.hypot(limb.start.x - limb.joint.x, limb.start.y - limb.joint.y), upper, 'upper limb length stays fixed');
+        close(Math.hypot(limb.end.x - limb.joint.x, limb.end.y - limb.joint.y), lower, 'lower limb length stays fixed');
+      }
+    }
+    f.attack = null;
+    f.attackCooldown = 0;
+  }
+  f.isCrouching = f.isGuarding = false;
+  const returned = computeStickPose(f, 2000);
+  close(returned.head.y, standing.head.y, 'standing after crouch fully resets the pose');
+}
+
+console.log(`Passed ${checks} combat and pose checks.`);

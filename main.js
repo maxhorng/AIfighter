@@ -94,47 +94,12 @@ class Fighter {
 
     this.shadow = scene.add.ellipse(x, FLOOR - 4, 94, 22, 0x040712, 0.42).setDepth(4);
     this.root = scene.add.container(x, FLOOR).setDepth(10);
-    this.parts = {};
     this.buildBody();
   }
 
   buildBody() {
-    const addRect = (key, x, y, w, h, color) => {
-      const part = this.scene.add.rectangle(x, y, w, h, color);
-      this.parts[key] = part;
-      this.root.add(part);
-      return part;
-    };
-    const addCircle = (key, x, y, radius, color) => {
-      const part = this.scene.add.circle(x, y, radius, color);
-      this.parts[key] = part;
-      this.root.add(part);
-      return part;
-    };
-    const p = this.palette;
-
-    addRect('backLeg', -13, -24, 19, 43, p.dark);
-    addRect('frontLeg', 12, -24, 20, 43, p.main);
-    addRect('backBoot', -15, -4, 31, 10, 0x10182b);
-    addRect('frontBoot', 14, -4, 32, 10, 0x10182b);
-    addRect('hips', 0, -47, 44, 18, 0x172139);
-    addRect('torso', 0, -76, 48, 48, p.main);
-    addRect('chest', 4, -80, 32, 25, p.light);
-    addRect('belt', 0, -54, 47, 8, p.accent);
-    addRect('backArm', -29, -73, 16, 37, p.dark);
-    addCircle('backFist', -30, -54, 10, p.light);
-    addRect('frontArm', 29, -72, 17, 38, p.main);
-    addCircle('frontFist', 30, -50, 11, p.light);
-    addCircle('head', 2, -114, 22, p.light);
-    addRect('hair', 2, -132, 43, 10, p.dark);
-    addRect('headband', 2, -124, 48, 6, p.accent);
-    addRect('visor', 12, -114, 18, 5, 0x12253b);
-    addRect('scarf', -23, -90, 20, 8, p.accent);
-
-    this.parts.frontFist.setStrokeStyle(2, p.dark, 0.8);
-    this.parts.backFist.setStrokeStyle(2, p.dark, 0.8);
-    this.parts.head.setStrokeStyle(3, p.dark, 1);
-    this.parts.torso.setStrokeStyle(2, p.light, 0.6);
+    this.bodyGraphics = this.scene.add.graphics();
+    this.root.add(this.bodyGraphics);
   }
 
   setFacing(direction) {
@@ -143,131 +108,13 @@ class Fighter {
   }
 
   setPose(now) {
-    const parts = this.parts;
-    const isHit = now < this.stunUntil && this.stunType !== 'block';
-    const isAttacking = Boolean(this.attack);
-    const bob = this.isWalking && !isAttacking ? Math.sin(now / 65) * 2 : Math.sin(now / 250) * 1.5;
-    this.root.setPosition(this.x, FLOOR - this.jumpHeight + bob);
+    this.pose = computeStickPose(this, now);
+    this.displayState = this.pose.state;
+    this.root.setPosition(this.x, FLOOR - this.jumpHeight);
     this.root.setDepth(10 + this.x / 10000);
+    this.root.setAngle(this.pose.angle * this.facing);
     this.shadow.setPosition(this.x, FLOOR - 4).setScale(1 - Math.min(this.jumpHeight / 250, 0.45), 1 - Math.min(this.jumpHeight / 300, 0.35));
-
-    parts.frontArm.setPosition(29, -72).setAngle(0);
-    parts.frontFist.setPosition(30, -50);
-    parts.backArm.setPosition(-29, -73).setAngle(0);
-    parts.backFist.setPosition(-30, -54);
-    parts.frontLeg.setPosition(12, -24);
-    parts.backLeg.setPosition(-13, -24);
-    parts.frontLeg.setAngle(0);
-    parts.backLeg.setAngle(0);
-    this.root.setAngle(0);
-    parts.torso.setAngle(0);
-    parts.head.setX(2);
-    parts.frontBoot.setPosition(14, -4).setAngle(0);
-    parts.backBoot.setPosition(-15, -4).setAngle(0);
-    parts.torso.setY(-76);
-    parts.head.setY(-114);
-    parts.scarf.setX(-23);
-
-    if (this.isCrouching && !isAttacking && !isHit) {
-      parts.torso.setY(-61);
-      parts.head.setY(-93);
-      parts.frontLeg.setPosition(18, -18).setAngle(-18);
-      parts.backLeg.setPosition(-13, -17).setAngle(18);
-      parts.frontArm.setPosition(33, -53).setAngle(-60);
-      parts.frontFist.setPosition(44, -40);
-    } else if (this.isGuarding && !isHit) {
-      parts.frontArm.setPosition(19, -82).setAngle(-58);
-      parts.frontFist.setPosition(38, -91);
-      parts.backArm.setPosition(-4, -78).setAngle(-25);
-      parts.backFist.setPosition(15, -85);
-    }
-
-    if (isHit) {
-      if (this.launched) this.root.setAngle(-Math.sign(this.launchVelocityX) * 24);
-      parts.torso.setAngle(-this.facing * 12);
-      parts.head.setX(-this.facing * 4);
-      parts.frontArm.setPosition(35, -86).setAngle(-75);
-      parts.frontFist.setPosition(43, -99);
-      this.displayState = this.launched ? 'AIR HIT' : 'HIT';
-    }
-
-    if (this.attack) {
-      const a = this.attack;
-      const reach = a.data.reach;
-      if (a.kind === 'fireball') {
-        parts.frontArm.setPosition(32, -83).setAngle(-38);
-        parts.frontFist.setPosition(51, -91);
-        this.displayState = a.label;
-      } else if (a.kind === 'rising') {
-        const lift = Math.min(a.age / 140, 1);
-        this.root.setAngle(-this.facing * Math.sin(a.age / 460) * 8);
-        parts.frontArm.setPosition(30, -90 - lift * 10).setAngle(-65);
-        parts.frontFist.setPosition(41, -108 - lift * 10);
-        parts.backLeg.setPosition(-12, -20).setAngle(24);
-      } else if (a.stance === 'air') {
-        parts.frontArm.setPosition(20, -88).setAngle(-42);
-        parts.frontFist.setPosition(36, -105);
-        const startup = a.data.frames.startup;
-        const activeEnd = startup + a.data.frames.active;
-        const kickAngle = a.frame < startup ? -25 : a.frame < activeEnd ? -64 : -20;
-        parts.frontLeg.setPosition(42, -42).setAngle(kickAngle);
-        parts.frontBoot.setPosition(63, -29).setAngle(kickAngle);
-        this.displayState = a.label;
-      } else if (a.stance === 'crouch') {
-        parts.torso.setY(-61);
-        parts.head.setY(-93);
-        parts.frontLeg.setPosition(18, -18).setAngle(-18);
-        parts.backLeg.setPosition(-13, -17).setAngle(18);
-        const { startup, active, recovery } = a.data.frames;
-        const activeEnd = startup + active;
-        const extension = a.frame < startup
-          ? -0.12 * (a.frame + 1) / startup
-          : a.frame < activeEnd
-            ? Math.min(1, (a.frame - startup + 1) / 2)
-            : Math.max(0, 1 - (a.frame - activeEnd + 1) / recovery);
-        parts.frontArm.setPosition(31 + extension * reach * 0.35, -48).setAngle(-4);
-        parts.frontFist.setPosition(42 + extension * reach * 0.68, -51);
-        this.displayState = a.label;
-      } else {
-        const { startup, active, recovery } = a.data.frames;
-        const activeEnd = startup + active;
-        const reachPose = a.frame < startup
-          ? -0.1 * (a.frame + 1) / startup
-          : a.frame < activeEnd
-            ? Math.min(1, (a.frame - startup + 1) / 2)
-            : Math.max(0.08, 1 - (a.frame - activeEnd + 1) / recovery);
-        parts.frontArm.setPosition(29 + reachPose * (reach * 0.42), -73).setAngle(-7);
-        parts.frontFist.setPosition(39 + reachPose * (reach * 0.8), -76);
-        parts.torso.setAngle(-this.facing * reachPose * 4);
-        this.displayState = a.label;
-      }
-    } else if (!isHit && now < this.dashUntil) {
-      this.displayState = 'DASH';
-      this.root.setAngle(this.dashDirection * 10);
-      const stride = Math.sin(now / 35) * 15;
-      parts.frontLeg.setAngle(stride);
-      parts.backLeg.setAngle(-stride);
-      parts.frontArm.setAngle(28);
-      parts.backArm.setAngle(28);
-    } else if (!isHit && this.isGuarding && this.isWalking) {
-      this.displayState = 'BACK GUARD';
-      const step = Math.sin(now / 72) * 5;
-      parts.frontLeg.setY(-24 + step).setAngle(step * 0.45);
-      parts.backLeg.setY(-24 - step).setAngle(-step * 0.45);
-    } else if (!isHit && this.isGuarding) {
-      this.displayState = 'GUARD';
-    } else if (!isHit && this.isCrouching) {
-      this.displayState = 'CROUCH';
-    } else if (!isHit && this.isWalking) {
-      this.displayState = 'MOVE';
-      const step = Math.sin(now / 65) * 9;
-      parts.frontLeg.setY(-24 + step).setAngle(step * 0.8);
-      parts.backLeg.setY(-24 - step).setAngle(-step * 0.8);
-      parts.frontArm.setY(-72 - step * 0.4).setAngle(-step * 0.6);
-      parts.backArm.setY(-73 + step * 0.4).setAngle(step * 0.6);
-    } else if (!isHit) {
-      this.displayState = this.jumpHeight > 0 ? 'AIR' : 'IDLE';
-    }
+    drawStickman(this.bodyGraphics, this.pose, this.palette);
   }
 
   destroy() {
